@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Namaz Vakti</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            text-align: center;
+        }
+        button {
+            padding: 20px 40px;
+            font-size: 24px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        .remaining-time {
+            font-size: 48px;
+            font-weight: bold;
+            margin-top: 20px;
+            color: #ff5722;
+        }
+    </style>
+</head>
+<body>
+    <div class="result" id="result"></div>
+    <div class="remaining-time" id="remainingTime"></div>
+    <button id="prayerButton">Bir Sonraki Namaz Vaktini Söyle</button>
+
+    <script>
+        const prayerTimes = {
+            "İmsak": "06:36",
+            "Güneş": "08:08",
+            "Öğle": "13:04",
+            "İkindi": "15:26",
+            "Akşam": "17:46",
+            "Yatsı": "19:12"
+        };
+
+        // Zamanı dakika cinsine çevir
+        function timeToMinutes(timeStr) {
+            const [hour, minute] = timeStr.split(':').map(Number);
+            return hour * 60 + minute;
+        }
+
+        // Dakika cinsinden zamanı saat ve dakika formatına çevir
+        function minutesToHours(minutes) {
+            const hours = Math.floor(minutes / 60);
+            const remainingMinutes = minutes % 60;
+            return { hours, remainingMinutes };
+        }
+
+        // Geçerli saat UTC'den yerel saate çevrilir
+        function convertUTCToLocal(utcTime) {
+            const now = new Date(utcTime);
+            return now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', hour12: false });
+        }
+
+        // Geçerli saat alınır (API veya yerel tarayıcı)
+        async function getCurrentTime() {
+            try {
+                const response = await fetch("http://worldtimeapi.org/api/timezone/Europe/Istanbul");
+                const data = await response.json();
+                return convertUTCToLocal(data.utc_datetime); // Yerel saat
+            } catch (error) {
+                console.error("Saat alınamadı, tarayıcı saatine geçiliyor:", error);
+                const now = new Date();
+                return now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', hour12: false });
+            }
+        }
+
+        // Sıradaki namazı bul
+        function findNextPrayer(currentTime, timings) {
+            const nowInMinutes = timeToMinutes(currentTime);
+            const prayerTimes = Object.entries(timings);
+            for (const [name, time] of prayerTimes) {
+                const prayerInMinutes = timeToMinutes(time);
+                if (nowInMinutes < prayerInMinutes) {
+                    const remainingMinutes = prayerInMinutes - nowInMinutes;
+                    return { name, remaining: remainingMinutes, time };
+                }
+            }
+
+            // Eğer bugünkü namaz vakitleri geçtiyse, yarının sabah namazını hesapla
+            const tomorrowFajrMinutes = timeToMinutes(timings["İmsak"]) + 24 * 60; // 24 saat eklenir
+            const remainingMinutes = tomorrowFajrMinutes - nowInMinutes;
+            return { name: "İmsak (Yarın)", remaining: remainingMinutes, time: timings["İmsak"] };
+        }
+
+        // Sayfa yüklendiğinde saat ve namaz bilgilerini yazdır
+        async function updateDisplay() {
+            const resultDiv = document.getElementById("result");
+            const remainingTimeDiv = document.getElementById("remainingTime");
+
+            const currentTime = await getCurrentTime();
+
+            const nextPrayer = findNextPrayer(currentTime, prayerTimes);
+
+            if (nextPrayer) {
+                const { hours, remainingMinutes } = minutesToHours(nextPrayer.remaining);
+                resultDiv.innerHTML = `
+                    Şu an saat: <b>${currentTime}</b><br>
+                    Sıradaki namaz: <b>${nextPrayer.name}</b><br>
+                    Namaz vakti: <b>${nextPrayer.time}</b>
+                `;
+                remainingTimeDiv.textContent = `${hours} saat ${remainingMinutes} dakika kaldı`;
+            }
+        }
+
+        // Butona tıklayınca sesli bilgi ver (Türkçe dilinde)
+        async function handlePrayerTime() {
+            const currentTime = await getCurrentTime();
+            const nextPrayer = findNextPrayer(currentTime, prayerTimes);
+
+            if (nextPrayer) {
+                const { hours, remainingMinutes } = minutesToHours(nextPrayer.remaining);
+                const utterance = new SpeechSynthesisUtterance(
+                    `Şu an saat ${currentTime}. 
+                    Sıradaki namaz ${nextPrayer.name}, 
+                    ${hours} saat ${remainingMinutes} dakika kaldı.`
+                );
+                utterance.lang = 'tr-TR'; // Türkçe dilinde konuş
+                speechSynthesis.speak(utterance);
+            }
+        }
+
+        // Sayfa yüklendiğinde bilgileri güncelle
+        document.addEventListener("DOMContentLoaded", updateDisplay);
+
+        // Butona tıklayınca sesli bilgi verme olayını bağla
+        document.getElementById("prayerButton").addEventListener("click", handlePrayerTime);
+    </script>
+</body>
+</html>
